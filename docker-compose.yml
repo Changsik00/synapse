@@ -1,16 +1,46 @@
-version: "3"
-
+version: "3.8"
 services:
   synapse:
     image: matrixdotorg/synapse:latest
     container_name: synapse
-    restart: always
-    ports:
-      - "8008:8008"   # HTTP (client-server 통신)
-      - "8448:8448"   # HTTPS (federation, 외부 매트릭스 서버와 통신 시)
     volumes:
-      - ./data:/data  # 데이터(설정/DB) 영구 저장
+      - ./data/synapse-data:/data
+      - ./config:/config
+    ports:
+      - "8008:8008"
     environment:
-      - SYNAPSE_SERVER_NAME=matrix.localhost
-      - SYNAPSE_REPORT_STATS=no
-      # 필요하다면 아래처럼 관리 비밀번호나 Registration 관련 환경변수를 추가할 수도 있음
+      - SYNAPSE_SERVER_NAME=${SYNAPSE_SERVER_NAME}
+      - SYNAPSE_REPORT_STATS=yes
+      - SYNAPSE_CONFIG_PATH=/data/homeserver.yaml
+    env_file:
+      - .env
+
+  nginx:
+    image: nginx:latest
+    container_name: nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./config/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - synapse
+      - slack-bridge
+
+  slack-bridge:
+    image: matrix-org/matrix-appservice-slack:latest
+    container_name: slack-bridge
+    volumes:
+      - ./data/slack-bridge-data:/data
+      - ./config/slack-registration.yaml:/data/registration.yaml
+    ports:
+      - "29328:29328"
+    depends_on:
+      - synapse
+    environment:
+      - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN}
+      - SLACK_EVENT_URL=${SLACK_EVENT_URL}
+      - MATRIX_HOMESERVER_URL=http://synapse:8008
+      - MATRIX_DOMAIN=${SYNAPSE_SERVER_NAME}
+    env_file:
+      - .env
